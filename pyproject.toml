@@ -1,0 +1,51 @@
+[project]
+name = "ohdsi-question-structurer"
+version = "0.0.1"
+description = "A Python package providing tools (MCP, REST, direct Python calls) for structuring research questions according to the OHDSI question templates."
+readme = "README.md"
+requires-python = ">=3.12"
+license = {file = "LICENSE"}
+authors = [
+  {name = "Martijn Schuemie", email = "schuemie@ohdsi.org"}
+]
+keywords = ["ohdsi", "omop"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+  "fastapi>=0.110,<1.0",
+  "mcp[cli]>=1,<2",
+  "SQLAlchemy>=2,<3",
+  "psycopg[binary]>=3.1,<4",
+  "oa-configurator>=1.2.1",
+  "omop-llm>=1.0.1",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "pytest-cov",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/OHDSI/ohdsi-question-structurer"
+"Bug Tracker" = "hhttps://github.com/OHDSI/ohdsi-question-structurer/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-ra -q"
+
+[tool.black]
+line-length = 120
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+select = ["E", "F", "I"]
+
