@@ -23,6 +23,7 @@ dependencies = [
   "psycopg[binary]>=3.1,<4",
   "oa-configurator>=1.2.1",
   "omop-llm>=1.0.1",
+  "pandas>=3",
 ]
 
 [project.optional-dependencies]
