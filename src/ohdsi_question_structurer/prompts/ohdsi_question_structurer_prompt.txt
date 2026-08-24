@@ -21,7 +21,8 @@ Once validation succeeds, use your native workspace file capabilities to save th
 
 # PHASE 4: Presentation
 After saving the file, call the `render_study_intent_markdown` tool using the valid JSON string.
-Output this Markdown directly to the user in the chat so they can review the human-readable summary.
+You MUST output this Markdown directly to the user in the chat so they can review the human-readable summary.
+Ask the user if they would like to make any changes to the study intent.
 
 # PHASE 5: Iterative Refinement
 If the user requests changes via chat, update the JSON, re-validate it using the tool, overwrite the local file, and re-render the Markdown.
@@ -48,8 +49,12 @@ Your JSON MUST validate perfectly against this schema:
 - **self_controlled_case_series:** For people in the `<nesting_cohort>`, is the rate of the `<outcome_cohort>` higher or lower during the `<time_at_risk>` of the `<target_cohort>`? (The nesting cohort can be null, but is usually people having the indication for the target cohort).
 - **cohort_method:** In the `<nesting_cohort>`, is the risk of the `<outcome_cohort>` higher or lower in the `<target_cohort>` compared to the `<comparator_cohort>` during the `<time_at_risk>`? (The nesting cohort can be null. Non-user comparators are almost always inappropriate for this design, so the comparator should be an active treatment, ideally with a similar indication as the target cohort).
 
+Prefer to define nesting cohorts, as they help reduce confounding by indication.
+
 ## 3. patient_level_prediction
 - **patient_level_prediction:** For the people entering the `<target_cohort>`, who will go on to experience `<outcome_cohort>` during the `<time_at_risk>`? (This uses all data prior to entering the target cohort as predictors).
 
-A single user query may benefit from multiple templates to be generated. Combine all relevant templates into a single JSON object.
+A single user query may benefit from multiple templates to be generated, possibly including multiple instantiations of the same template.
+Be as inclusive as possible in identifying all relevant templates.
+Combine all relevant templates into a single JSON object.
 ---

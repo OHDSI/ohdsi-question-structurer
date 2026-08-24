@@ -69,10 +69,68 @@ class OhdsiQuestionStructurerService:
         :param structured_questions: A JSON string representing the structured questions.
         :return Markdown string representing the structured questions in a pretty format.
         """
-        # Placeholder for actual implementation
-        # This method would likely involve processing the questions and returning a structured format
-        return f"Structured representation of: {study_intent}"
-    
+        try:
+            data = json.loads(study_intent)
+            validated = StudyIntent.model_validate(data)
+        except json.JSONDecodeError as e:
+            return f"JSON Formatting Error: {str(e)}"
+        except ValidationError as e:
+            return f"Schema Validation Error:\n{e.json(indent=2)}"
+
+        def _pretty_value(value):
+            if value is None:
+                return "_Not specified_"
+            if isinstance(value, list):
+                if not value:
+                    return "_None_"
+                return ", ".join(f"`{item}`" for item in value)
+            return f"`{value}`"
+
+        required_fields_by_template = {
+            "patient_characterization": ["target_cohort"],
+            "treatment_patterns": ["target_cohort", "treatment_cohorts"],
+            "outcome_incidence": ["target_cohort", "outcome_cohort", "time_at_risk"],
+            "self_controlled_case_series": ["nesting_cohort", "outcome_cohort", "time_at_risk", "target_cohort"],
+            "cohort_method": ["nesting_cohort", "target_cohort", "comparator_cohort", "outcome_cohort", "time_at_risk"],
+            "patient_level_prediction": ["target_cohort", "outcome_cohort", "time_at_risk"],
+        }
+
+        lines = ["# Study Intent", ""]
+
+        if not validated.analyses:
+            lines.append("No analyses provided.")
+            return "\n".join(lines)
+
+        lines.append(f"Total analyses: **{len(validated.analyses)}**")
+        lines.append("")
+        lines.append("## Analysis Overview")
+        lines.append("| # | Analytics Type | Template |")
+        lines.append("|---|---|---|")
+        for idx, analysis in enumerate(validated.analyses, start=1):
+            lines.append(f"| {idx} | `{analysis.analytics_type.value}` | `{analysis.template_name.value}` |")
+        lines.append("")
+
+        for idx, analysis in enumerate(validated.analyses, start=1):
+            params = analysis.parameters.model_dump()
+            template_name = analysis.template_name.value
+            required_fields = required_fields_by_template.get(template_name, [])
+
+            lines.append(f"## Analysis {idx}: `{template_name}`")
+            lines.append(f"Analytics type: `{analysis.analytics_type.value}`")
+            lines.append("")
+            lines.append("| Parameter | Value |")
+            lines.append("|---|---|")
+
+            if required_fields:
+                for field_name in required_fields:
+                    lines.append(f"| `{field_name}` | {_pretty_value(params.get(field_name))} |")
+            else:
+                lines.append("| _No mapped parameters for this template_ | _Not specified_ |")
+
+            lines.append("")
+
+        return "\n".join(lines).rstrip()
+
 
     def  validate_study_intent(self, json_content: str):
         """
