@@ -16,21 +16,24 @@ class ComparatorSelectorBackend(ABC):
         self.model = model
 
     @abstractmethod
-    def find_target(self, name: str) -> List[Tuple[int, str]]:
+    def find_target(self, name: str, top_n: int = 10) -> List[Tuple[int, str]]:
         """
-        Find the target comparator for a given name.
+        Find the target cohort for a given name. Uses embedding vectors to find the closest matches.
 
         :param name: Name of the target comparator.
+        :param top_n: Maximum number of matching targets to return.
         :return List of tuples containing the target ID and name.
         """
         pass
 
     @abstractmethod
-    def recommend_comparators(self, target_id: int) -> List[Tuple[float, str]]:
+    def recommend_comparators(self, target_id: int, top_n: int = 10, min_databases: int = 1) -> List[Tuple[float, str]]:
         """
         Recommend comparators for a given target.
 
         :param target_id: ID of the target comparator.
+        :param top_n: Maximum number of recommended comparators to return.
+        :param min_databases: Minimum number of supporting databases required.
         :return List of tuples containing the similarity score and comparator name.
         """
         pass

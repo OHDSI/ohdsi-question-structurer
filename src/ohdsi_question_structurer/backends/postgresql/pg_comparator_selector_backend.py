@@ -24,15 +24,15 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
     COHORT_DEFINITION_ID_INDEX_NAME = "idx_cs_cohort_cohort_definition_id"
     SIMILARITY_TARGET_INDEX_NAME = "idx_cs_similarity_cohort_definition_id_1"
     SIMILARITY_COMPARATOR_INDEX_NAME = "idx_cs_similarity_cohort_definition_id_2"
-    FIND_TARGET_LIMIT = 10
+    DEFAULT_FIND_TARGET_LIMIT = 10
 
     @property
     def _schema_prefix(self) -> str:
         """Returns the schema-qualified prefix (e.g. 'myschema.')."""
         return f"{self.schema}."
 
-    def find_target(self, name: str) -> List[Tuple[int, str]]:
-        if not name.strip():
+    def find_target(self, name: str, top_n: int = DEFAULT_FIND_TARGET_LIMIT) -> List[Tuple[int, str]]:
+        if not name.strip() or top_n <= 0:
             return []
 
         query_embedding = EmbeddingReaderInterface.generate_embeddings(
@@ -66,13 +66,16 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
                 ).bindparams(bindparam("query_embedding", type_=halfvec_type)),
                 {
                     "query_embedding": query_embedding[0].tolist(),
-                    "limit": self.FIND_TARGET_LIMIT,
+                    "limit": top_n,
                 },
             ).all()
 
         return [(int(cohort_definition_id), str(cohort_name)) for cohort_definition_id, cohort_name in rows]
 
-    def recommend_comparators(self, target_id: int) -> List[Tuple[float, str]]:
+    def recommend_comparators(self, target_id: int, top_n: int = 10, min_databases: int = 1) -> List[Tuple[float, str]]:
+        if top_n <= 0:
+            return []
+
         metadata = MetaData()
 
         cs_similarity = Table(
@@ -81,6 +84,7 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
             Column("cohort_definition_id_1"),
             Column("cohort_definition_id_2"),
             Column("mean_cosine_similarity"),
+            Column("database_count"),
             schema=self.schema,
         )
         cs_cohort = Table(
@@ -113,7 +117,9 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
                     cs_similarity.c.cohort_definition_id_2 == target_id,
                 )
             )
+            .where(cs_similarity.c.database_count >= min_databases)
             .order_by(cs_similarity.c.mean_cosine_similarity.desc(), cs_cohort.c.cohort_name.asc())
+            .limit(top_n)
         )
 
         with self.engine.connect() as connection:

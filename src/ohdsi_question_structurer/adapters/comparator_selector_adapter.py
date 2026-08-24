@@ -32,23 +32,26 @@ class ComparatorSelectorAdapter:
         # I'm sure there are clever factory patterns I should use, but for now:
         self.comparator_selector_backend = PostgresComparatorSelectorBackend(engine, schema, model_backend)
 
-    def find_target(self, name: str) -> List[Tuple[int, str]]:
+    def find_target(self, name: str, top_n: int = 10) -> List[Tuple[int, str]]:
         """
-        Find the target comparator for a given name.
+        Find the target cohort for a given name. Uses embedding vectors to find the closest matches.
 
         :param name: Name of the target comparator.
+        :param top_n: Maximum number of matching targets to return.
         :return List of tuples containing the target ID and name.
         """
-        return self.comparator_selector_backend.find_target(name)
+        return self.comparator_selector_backend.find_target(name, top_n)
 
-    def recommend_comparators(self, target_id: int) -> List[Tuple[float, str]]:
+    def recommend_comparators(self, target_id: int, top_n: int = 10, min_databases: int = 1) -> List[Tuple[float, str]]:
         """
         Recommend comparators for a given target.
 
         :param target_id: ID of the target comparator.
+        :param top_n: Maximum number of recommended comparators to return.
+        :param min_databases: Minimum number of supporting databases required.
         :return List of tuples containing the similarity score and comparator name.
         """
-        return self.comparator_selector_backend.recommend_comparators(target_id)
+        return self.comparator_selector_backend.recommend_comparators(target_id, top_n, min_databases)
 
     def insert_data(self, cohort_table_path: str, similarity_table_path: str) -> None:
         """

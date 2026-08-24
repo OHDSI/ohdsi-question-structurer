@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import List, Tuple
 
 from pydantic import ValidationError
 
@@ -11,24 +12,27 @@ class OhdsiQuestionStructurerService:
     def __init__(self, comparator_selector_adapter: ComparatorSelectorAdapter):
         self.comparator_selector_adapter = comparator_selector_adapter
 
-    def find_target(self, name: str):
+    def find_target(self, name: str, top_n: int = 10) -> List[Tuple[int, str]]:
         """
-        Find the target cohort for a given name.
+        Find the target cohort for a given name. Uses embedding vectors to find the closest matches.
 
         :param name: Name of the target cohort.
+        :param top_n: Maximum number of matching targets to return.
         :return List of tuples containing the target ID and name.
         """
-        return self.comparator_selector_adapter.find_target(name)
+        return self.comparator_selector_adapter.find_target(name, top_n)
 
 
-    def recommend_comparators(self, target_id: int):
+    def recommend_comparators(self, target_id: int, top_n: int = 10, min_databases: int = 1):
         """
         Recommend comparators for a given target cohort.
 
         :param target_id: ID of the target cohort.
+        :param top_n: Maximum number of recommended comparators to return.
+        :param min_databases: Minimum number of supporting databases required.
         :return List of tuples containing the similarity score and comparator name.
         """
-        return self.comparator_selector_adapter.recommend_comparators(target_id)
+        return self.comparator_selector_adapter.recommend_comparators(target_id, top_n, min_databases)
 
 
     def insert_data(self, cohort_table_path: str, similarity_table_path: str):
@@ -132,7 +136,7 @@ class OhdsiQuestionStructurerService:
         return "\n".join(lines).rstrip()
 
 
-    def  validate_study_intent(self, json_content: str):
+    def  validate_study_intent(self, json_content: str) -> str:
         """
         Validate the structured questions.
 
