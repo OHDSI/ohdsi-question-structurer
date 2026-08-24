@@ -5,14 +5,12 @@ import sys
 from pathlib import Path
 import tomllib
 
-import sqlalchemy
 from mcp.server.fastmcp import FastMCP
 from oa_configurator import StackConfig
 
-from oa_configurator import  Resolver
-from omop_llm import build_model_backend_from_resolved
-
-from ohdsi_question_structurer.backends.comparator_selector_backend import PostgresComparatorSelector
+from ohdsi_question_structurer.adapters.comparator_selector_adapter import ComparatorSelectorAdapter
+from ohdsi_question_structurer.tools.ohdsi_question_structurer_tools import register_ohdsi_question_structurer_tools
+from ohdsi_question_structurer.services.ohdsi_question_structurer_service import OhdsiQuestionStructurerService
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -55,34 +53,12 @@ def load_stack_config_from_path(path: str | Path) -> StackConfig:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     config = load_stack_config_from_path(args.config_path)
-
-    # Unclear how I use OhdsiQuestionStructurerConfig, so some hacking instead:
-    resolver = Resolver(config)
-    tool = config.tools.get("ohdsi_question_structurer")
-    database = resolver.get_database(tool["comparator_selector_db"])
-    connection = resolver.get_connection(database.connection)
-    url = sqlalchemy.URL.create(
-        drivername=connection.dialect,
-        username=connection.user,
-        password=connection.password,
-        host=connection.host,
-        port=connection.port,
-        database=connection.database_name,
-    )
-
-    model = resolver.resolve_model(tool['embedding_model_name'])
-    model_backend = build_model_backend_from_resolved(model)
-
-    engine = sqlalchemy.create_engine(url)
-    # I'm sure there are clever factory patterns I should use, but for now:
-    comparator_selector_backend = PostgresComparatorSelector(engine, model_backend)
-
+    comparator_selector_adapter = ComparatorSelectorAdapter(config)
+    ohdsi_question_structurer_service = OhdsiQuestionStructurerService(comparator_selector_adapter)
 
     transport = args.transport
     if transport == "rest":
         raise RuntimeError("Rest transport is not yet supported. Use stdio, sse, or streamable-http instead.")
-
-
 
     app = FastMCP(
         "ohds-question-structurer",
@@ -91,7 +67,9 @@ def main(argv: list[str] | None = None) -> None:
         json_response=transport == "streamable-http",
         stateless_http=True,
     )
-    # TODO: Add tools, prompts, and resources
+
+    register_ohdsi_question_structurer_tools(app, ohdsi_question_structurer_service)
+
     app.run(transport=transport)
 
 if __name__ == "__main__":

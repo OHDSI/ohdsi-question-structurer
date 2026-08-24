@@ -1,0 +1,70 @@
+from mcp.server import FastMCP
+
+from ohdsi_question_structurer.services.ohdsi_question_structurer_service import OhdsiQuestionStructurerService
+
+
+def register_ohdsi_question_structurer_tools(server: FastMCP,
+                                             ohdsi_question_structurer_service: OhdsiQuestionStructurerService) -> None:
+    """
+    Register the ohdsi_question_structurer tools with the given FastMCP server.
+
+    This is supposed to use the GroundworkersMCPServer class instead, but I can't see how it is used in the codebase.
+    For now, this function will register the ohdsi_question_structurer tools with the provided FastMCP server instance.
+
+    :param server: The FastMCP server instance.
+    :param ohdsi_question_structurer_service: The OhdsiQuestionStructurerService instance.
+    """
+
+    @server.tool("find_target")
+    def find_target(name: str):
+        """
+        Find the target cohort for a given name.
+
+        :param name: Name of the target cohort.
+        :return List of tuples containing the target ID and name.
+        """
+        return ohdsi_question_structurer_service.find_target(name)
+
+
+    @server.tool("recommend_comparators")
+    def recommend_comparators(target_id: int):
+        """
+        Recommend comparators for a given target cohort.
+
+        :param target_id: ID of the target cohort.
+        :return List of tuples containing the similarity score and comparator name.
+        """
+        return ohdsi_question_structurer_service.recommend_comparators(target_id)
+
+
+    @server.tool("render_study_intent_markdown")
+    def render_study_intent_markdown(study_intent: str):
+        """
+        Render structured questions as pretty Markdown.
+
+        :param study_intent: A JSON string representing the structured questions.
+        :return Markdown string representing the structured questions in a pretty format.
+        """
+        return ohdsi_question_structurer_service.render_study_intent_markdown(study_intent)
+
+
+    @server.prompt("ohdsi_question_structurer")
+    def ohdsi_question_structurer_prompt(user_input: str) -> str:
+        """
+        Prompt for the ohdsi_question_structurer tool.
+
+        :param user_input: The user's initial question(s) or context.
+        :return A string representing the prompt for structuring questions.
+        """
+        return ohdsi_question_structurer_service.get_question_structuring_prompt(user_input)
+
+
+    @server.tool("validate_study_intent")
+    def validate_study_intent(study_intent: str):
+        """
+        Validate the structured questions against the StudyIntent schema.
+
+        :param study_intent: A JSON string representing the structured questions.
+        :return A boolean indicating whether the structured questions are valid.
+        """
+        return ohdsi_question_structurer_service.validate_study_intent(study_intent)
