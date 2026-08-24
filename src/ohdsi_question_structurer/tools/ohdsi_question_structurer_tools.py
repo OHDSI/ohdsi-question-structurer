@@ -50,15 +50,14 @@ def register_ohdsi_question_structurer_tools(server: FastMCP,
         return await asyncio.to_thread(ohdsi_question_structurer_service.render_study_intent_markdown, study_intent)
 
 
-    @server.prompt("ohdsi_question_structurer")
-    async def ohdsi_question_structurer_prompt(user_input: str) -> str:
+    @server.resource("resource://ohdsi_question_structurer")
+    async def ohdsi_question_structurer() -> str:
         """
-        Prompt for the ohdsi_question_structurer tool.
+        Agent instructions for structuring OHDSI study questions.
 
-        :param user_input: The user's initial question(s) or context.
-        :return A string representing the prompt for structuring questions.
+        :return A string representing the instructions
         """
-        return await asyncio.to_thread(ohdsi_question_structurer_service.get_question_structuring_prompt, user_input)
+        return await asyncio.to_thread(ohdsi_question_structurer_service.get_question_structuring_prompt)
 
 
     @server.tool("validate_study_intent")
@@ -70,3 +69,13 @@ def register_ohdsi_question_structurer_tools(server: FastMCP,
         :return A boolean indicating whether the structured questions are valid.
         """
         return await asyncio.to_thread(ohdsi_question_structurer_service.validate_study_intent, study_intent)
+
+
+    @server.tool("get_structurer_instructions")
+    async def get_structurer_instructions() -> str:
+        """
+        Retrieve the canonical OHDSI question structuring instructions.
+
+        :return The instruction text used to structure OHDSI study questions.
+        """
+        return await asyncio.to_thread(ohdsi_question_structurer_service.get_question_structuring_prompt)

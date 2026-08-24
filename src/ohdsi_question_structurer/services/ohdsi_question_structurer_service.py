@@ -48,19 +48,17 @@ class OhdsiQuestionStructurerService:
         self.comparator_selector_adapter.create_embedding_vectors()
 
 
-    def get_question_structuring_prompt(self, user_input: str) -> str:
+    def get_question_structuring_prompt(self) -> str:
         """
         Get the prompt for structuring questions.
 
-        :param user_input: The user's initial question(s) or context.
         :return A string representing the prompt for structuring questions.
         """
         schema_dict = StudyIntent.model_json_schema()
         schema_json = json.dumps(schema_dict, indent=2)
-        prompt_path = Path(__file__).parent / "prompts" / "ohdsi_question_structurer_prompt.txt"
+        prompt_path = Path(__file__).parent.parent / "prompts" / "ohdsi_question_structurer_prompt.txt"
         prompt_template = prompt_path.read_text(encoding="utf-8")
-        prompt = prompt_template.replace("{{schema_json}}", schema_json)
-        prompt = prompt.replace("{{user_input}}", user_input)
+        prompt = prompt_template.replace("{schema_json}", schema_json)
         return prompt
 
 
