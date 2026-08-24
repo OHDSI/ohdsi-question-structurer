@@ -4,12 +4,15 @@ from abc import ABC, abstractmethod
 from typing import List, Tuple
 
 from omop_llm import ModelBackend
-from sqlalchemy import Engine, bindparam, case, column, inspect, or_, select, table, text
+from sqlalchemy import Engine
 
 class ComparatorSelectorBackend(ABC):
 
-    def __init__(self, engine: Engine, model: ModelBackend) -> None:
+    def __init__(self, engine: Engine, schema: str, model: ModelBackend) -> None:
+        if not schema or not schema.strip():
+            raise ValueError("schema must not be empty")
         self.engine = engine
+        self.schema = schema
         self.model = model
 
     @abstractmethod

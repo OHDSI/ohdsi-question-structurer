@@ -31,6 +31,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--host", help="Bind host override for HTTP transports.")
     parser.add_argument("--port", type=int, help="Bind port override for HTTP transports.")
+    parser.add_argument(
+        "--load-data",
+        action="store_true",
+        help="Load data into the comparator selector database from bundled files, unless --load-data-paths is provided.",
+    )
+    parser.add_argument(
+        "--load-data-paths",
+        nargs=2,
+        metavar=("COHORT_TABLE_PATH", "SIMILARITY_TABLE_PATH"),
+        help="Load data into the comparator selector database using explicit cohort and similarity table paths.",
+    )
+    parser.add_argument(
+        "--create-embeddings",
+        action="store_true",
+        help="Create embedding vectors for the comparators using the provided model."
+    )
+
     return parser.parse_args(argv)
 
 def load_stack_config_from_path(path: str | Path) -> StackConfig:
@@ -54,14 +71,28 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     config = load_stack_config_from_path(args.config_path)
     comparator_selector_adapter = ComparatorSelectorAdapter(config)
+
     ohdsi_question_structurer_service = OhdsiQuestionStructurerService(comparator_selector_adapter)
+
+    # Initialize the database with data if requested via the command line arguments:
+    if args.load_data_paths:
+        if len(args.load_data_paths) != 2:
+            raise ValueError("Exactly two paths must be provided for --load-data-paths: cohort_table_path and similarity_table_path.")
+        ohdsi_question_structurer_service.insert_data(args.load_data_paths[0], args.load_data_paths[1])
+    elif args.load_data:
+        data_dir = Path(__file__).resolve().parent / "data"
+        cohort_path = data_dir / "cs_cohorts.csv.gz"
+        similarity_path = data_dir / "cs_similarity.csv.gz"
+        ohdsi_question_structurer_service.insert_data(str(cohort_path), str(similarity_path))
+    if args.create_embeddings:
+        ohdsi_question_structurer_service.create_embedding_vectors()
 
     transport = args.transport
     if transport == "rest":
         raise RuntimeError("Rest transport is not yet supported. Use stdio, sse, or streamable-http instead.")
 
     app = FastMCP(
-        "ohds-question-structurer",
+        "ohdsi-question-structurer",
         host=args.host,
         port=args.port,
         json_response=transport == "streamable-http",

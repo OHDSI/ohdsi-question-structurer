@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from typing import List, Tuple
+import logging
 
 import gzip
 import pandas as pd
-from omop_llm import ModelBackend
 from omop_emb.interface import (
     EmbeddingRole,
     EmbeddingReaderInterface,
 )
 from pgvector.sqlalchemy import HALFVEC
-from sqlalchemy import Engine, bindparam, case, column, inspect, or_, select, table, text
+from sqlalchemy import Column, MetaData, Table, bindparam, case, inspect, or_, select, text
 
 from ohdsi_question_structurer.backends.comparator_selector_backend import ComparatorSelectorBackend
+
+logger = logging.getLogger(__name__)
 
 
 class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
@@ -24,6 +25,11 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
     SIMILARITY_TARGET_INDEX_NAME = "idx_cs_similarity_cohort_definition_id_1"
     SIMILARITY_COMPARATOR_INDEX_NAME = "idx_cs_similarity_cohort_definition_id_2"
     FIND_TARGET_LIMIT = 10
+
+    @property
+    def _schema_prefix(self) -> str:
+        """Returns the schema-qualified prefix (e.g. 'myschema.')."""
+        return f"{self.schema}."
 
     def find_target(self, name: str) -> List[Tuple[int, str]]:
         if not name.strip():
@@ -39,7 +45,10 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
 
         with self.engine.connect() as connection:
             inspector = inspect(connection)
-            column_names = {column["name"] for column in inspector.get_columns("cs_cohort")}
+            column_names = {
+                col["name"]
+                for col in inspector.get_columns("cs_cohort", schema=self.schema)
+            }
             if "embedding_vector" not in column_names:
                 raise RuntimeError(
                     "cs_cohort.embedding_vector does not exist. Run create_embedding_vectors() first."
@@ -47,9 +56,9 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
 
             rows = connection.execute(
                 text(
-                    """
+                    f"""
                     SELECT cohort_definition_id, cohort_name
-                    FROM cs_cohort
+                    FROM {self._schema_prefix}cs_cohort
                     WHERE embedding_vector IS NOT NULL
                     ORDER BY embedding_vector <=> :query_embedding
                     LIMIT :limit
@@ -64,16 +73,22 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
         return [(int(cohort_definition_id), str(cohort_name)) for cohort_definition_id, cohort_name in rows]
 
     def recommend_comparators(self, target_id: int) -> List[Tuple[float, str]]:
-        cs_similarity = table(
+        metadata = MetaData()
+
+        cs_similarity = Table(
             "cs_similarity",
-            column("cohort_definition_id_1"),
-            column("cohort_definition_id_2"),
-            column("mean_cosine_similarity"),
+            metadata,
+            Column("cohort_definition_id_1"),
+            Column("cohort_definition_id_2"),
+            Column("mean_cosine_similarity"),
+            schema=self.schema,
         )
-        cs_cohort = table(
+        cs_cohort = Table(
             "cs_cohort",
-            column("cohort_definition_id"),
-            column("cohort_name"),
+            metadata,
+            Column("cohort_definition_id"),
+            Column("cohort_name"),
+            schema=self.schema,
         )
 
         comparator_id = case(
@@ -107,8 +122,9 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
         return [(float(similarity), str(cohort_name)) for similarity, cohort_name in rows]
 
     def insert_data(self, cohort_table_path: str, similarity_table_path: str) -> None:
+        logger.info("Starting data insert. This may take a while...")
+
         connection = self.engine.connect()
-        # Load data into the database using pandas
         with connection.begin():
             # Load cohort data
             if cohort_table_path.endswith('.gz'):
@@ -116,12 +132,15 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
                     cohort_df = pd.read_csv(f)
             else:
                 cohort_df = pd.read_csv(cohort_table_path)
-            cohort_df.to_sql("cs_cohort", con=connection, if_exists="replace", index=False)
+
+            logger.info("Writing cohort data to %s.cs_cohort", self.schema)
+            cohort_df.to_sql("cs_cohort", con=connection, schema=self.schema, if_exists="replace", index=False)
+
             connection.execute(
                 text(
                     f"""
                     CREATE INDEX IF NOT EXISTS {self.COHORT_DEFINITION_ID_INDEX_NAME}
-                    ON cs_cohort (cohort_definition_id)
+                    ON {self._schema_prefix}cs_cohort (cohort_definition_id)
                     """
                 )
             )
@@ -132,12 +151,16 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
                     similarity_df = pd.read_csv(f)
             else:
                 similarity_df = pd.read_csv(similarity_table_path)
-            similarity_df.to_sql("cs_similarity", con=connection, if_exists="replace", index=False)
+
+            logger.info("Writing similarity data to %s.cs_similarity", self.schema)
+            similarity_df.to_sql("cs_similarity", con=connection, schema=self.schema, if_exists="replace", index=False)
+
+            logger.info("Creating indices")
             connection.execute(
                 text(
                     f"""
                     CREATE INDEX IF NOT EXISTS {self.SIMILARITY_TARGET_INDEX_NAME}
-                    ON cs_similarity (cohort_definition_id_1)
+                    ON {self._schema_prefix}cs_similarity (cohort_definition_id_1)
                     """
                 )
             )
@@ -145,21 +168,24 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
                 text(
                     f"""
                     CREATE INDEX IF NOT EXISTS {self.SIMILARITY_COMPARATOR_INDEX_NAME}
-                    ON cs_similarity (cohort_definition_id_2)
+                    ON {self._schema_prefix}cs_similarity (cohort_definition_id_2)
                     """
                 )
             )
+        logger.info("Data insert complete.")
         connection.close()
 
     def create_embedding_vectors(self) -> None:
+        logger.info("Creating embedding vectors. This may take a while...")
+
         with self.engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
             cohorts = connection.execute(
                 text(
-                    """
+                    f"""
                     SELECT cohort_definition_id, cohort_name
-                    FROM cs_cohort
+                    FROM {self._schema_prefix}cs_cohort
                     WHERE cohort_name IS NOT NULL
                     ORDER BY cohort_definition_id
                     """
@@ -179,7 +205,10 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
             halfvec_spec = halfvec_type.compile(dialect=connection.dialect)
 
             inspector = inspect(connection)
-            column_names = {column["name"] for column in inspector.get_columns("cs_cohort")}
+            column_names = {
+                col["name"]
+                for col in inspector.get_columns("cs_cohort", schema=self.schema)
+            }
 
             if "embedding_vector" in column_names:
                 existing_type = connection.execute(
@@ -190,25 +219,32 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
                         JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid
                         JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE c.relname = 'cs_cohort'
-                          AND n.nspname = current_schema()
+                          AND n.nspname = :schema_name
                           AND a.attname = 'embedding_vector'
                           AND a.attnum > 0
                           AND NOT a.attisdropped
                         """
-                    )
+                    ),
+                    {"schema_name": self.schema},
                 ).scalar_one_or_none()
                 if existing_type is not None and existing_type.lower() != halfvec_spec.lower():
-                    connection.execute(text("ALTER TABLE cs_cohort DROP COLUMN embedding_vector"))
+                    connection.execute(
+                        text(f"ALTER TABLE {self._schema_prefix}cs_cohort DROP COLUMN embedding_vector")
+                    )
                     column_names.remove("embedding_vector")
 
             if "embedding_vector" not in column_names:
-                connection.execute(text(f"ALTER TABLE cs_cohort ADD COLUMN embedding_vector {halfvec_spec}"))
+                connection.execute(
+                    text(f"ALTER TABLE {self._schema_prefix}cs_cohort ADD COLUMN embedding_vector {halfvec_spec}")
+                )
 
-            connection.execute(text("UPDATE cs_cohort SET embedding_vector = NULL WHERE cohort_name IS NULL"))
+            connection.execute(
+                text(f"UPDATE {self._schema_prefix}cs_cohort SET embedding_vector = NULL WHERE cohort_name IS NULL")
+            )
 
             update_stmt = text(
-                """
-                UPDATE cs_cohort
+                f"""
+                UPDATE {self._schema_prefix}cs_cohort
                 SET embedding_vector = :embedding_vector
                 WHERE cohort_definition_id = :cohort_definition_id
                 """
@@ -229,7 +265,7 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
                 text(
                     f"""
                     CREATE INDEX IF NOT EXISTS {self.COHORT_EMBEDDING_INDEX_NAME}
-                    ON cs_cohort
+                    ON {self._schema_prefix}cs_cohort
                     USING hnsw (embedding_vector halfvec_cosine_ops)
                     WITH (m = 16, ef_construction = 64)
                     """

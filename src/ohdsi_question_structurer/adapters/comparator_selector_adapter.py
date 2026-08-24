@@ -28,8 +28,9 @@ class ComparatorSelectorAdapter:
         model_backend = build_model_backend_from_resolved(model)
 
         engine = sqlalchemy.create_engine(url)
+        schema = database.schema_name
         # I'm sure there are clever factory patterns I should use, but for now:
-        self.comparator_selector_backend = PostgresComparatorSelectorBackend(engine, model_backend)
+        self.comparator_selector_backend = PostgresComparatorSelectorBackend(engine, schema, model_backend)
 
     def find_target(self, name: str) -> List[Tuple[int, str]]:
         """
