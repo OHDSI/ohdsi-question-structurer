@@ -1,0 +1,60 @@
+# ~/.config/omop/config.toml
+# OMOP stack shared configuration, using the oa-configurator 1.0 schema.
+
+# ---------------------------------------------------------------------------
+# Connections: physical database endpoints.
+# ---------------------------------------------------------------------------
+
+[connections.comparator_selector]
+dialect       = "postgresql+psycopg"
+host          = "localhost"
+port          = 5432
+user          = "joe"
+password      = "secret"
+database_name = "ohdsi"
+
+
+# ---------------------------------------------------------------------------
+# Databases: named logical targets built on connections.
+# Every entry requires kind = "generic" or kind = "cdm".
+# ---------------------------------------------------------------------------
+
+[databases.comparator_selector_db]
+kind        = "generic"
+connection  = "comparator_selector"
+schema_name = "tools"
+
+# ---------------------------------------------------------------------------
+# Providers and models: reusable LLM/embedding backends.
+# ---------------------------------------------------------------------------
+
+[providers.local-ollama]
+provider = "ollama"
+base_url = "http://127.0.0.1:11434"
+
+[models.qwen3-embedding]
+provider        = "local-ollama"
+model           = "qwen3-embedding:0.6b"
+embedding_dim   = 1024
+document_prefix = ""
+query_prefix    = "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: "
+embeddings      = true
+
+# ---------------------------------------------------------------------------
+# Tools: per-package config, managed via `omop-config configure <package>`.
+# Fields are package-specific; each package defines its own typed schema.
+# ---------------------------------------------------------------------------
+
+[tools.ohdsi_question_structurer]
+comparator_selector_db = "comparator_selector_db"
+embedding_model_name = "qwen3-embedding"
+
+# ---------------------------------------------------------------------------
+# Logging (optional): omit for WARNING-level defaults.
+# ---------------------------------------------------------------------------
+
+[logging]
+level = "INFO"
+
+[logging.loggers]
+"sqlalchemy.engine" = "WARNING"
