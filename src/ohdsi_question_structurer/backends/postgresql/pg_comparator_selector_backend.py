@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 from typing import List, Tuple
 import logging
 
 import gzip
+
+import numpy as np
 import pandas as pd
+import requests
 from omop_emb.interface import (
     EmbeddingRole,
     EmbeddingReaderInterface,
@@ -35,11 +39,25 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
         if not name.strip() or top_n <= 0:
             return []
 
-        query_embedding = EmbeddingReaderInterface.generate_embeddings(
-            self.model,
-            name,
-            role=EmbeddingRole.QUERY,
-        )
+        if "jnj.com" in self.model._api_base:
+            # Workaround to support the JnJ API:
+            payload = json.dumps({
+                "input": name
+            })
+            headers = {
+                'api-key': self.model._client.client.api_key,
+                'Content-Type': 'application/json'
+            }
+            response = requests.request("POST", self.model._api_base, headers=headers, data=payload)
+            if response.status_code != 200:
+                raise RuntimeError(f"Failed to get embeddings from JnJ API: {response.status_code} {response.text}")
+            query_embedding = np.array([np.array(item["embedding"]) for item in json.loads(response.text)["data"]])
+        else:
+            query_embedding = EmbeddingReaderInterface.generate_embeddings(
+                self.model,
+                name,
+                role=EmbeddingRole.QUERY,
+            )
         embedding_dim = int(query_embedding.shape[1])
         halfvec_type = HALFVEC(embedding_dim)
 
@@ -185,7 +203,26 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
         logger.info("Creating embedding vectors. This may take a while...")
 
         with self.engine.begin() as connection:
-            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            extension_exists = connection.execute(
+                text("SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'vector'")
+            ).scalar_one_or_none()
+            if extension_exists is None:
+                try:
+                    connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                except Exception as exc:
+                    with self.engine.connect() as check_connection:
+                        extension_exists = check_connection.execute(
+                            text("SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'vector'")
+                        ).scalar_one_or_none()
+                    if extension_exists is None:
+                        raise RuntimeError(
+                            "pgvector extension is not available and could not be created. "
+                            "Ask a database administrator to run `CREATE EXTENSION vector`."
+                        ) from exc
+                    logger.warning(
+                        "Could not run CREATE EXTENSION for pgvector (likely insufficient privileges), "
+                        "but extension already exists. Continuing."
+                    )
 
             cohorts = connection.execute(
                 text(
@@ -200,12 +237,25 @@ class PostgresComparatorSelectorBackend(ComparatorSelectorBackend):
 
             if not cohorts:
                 return
-
-            embeddings = EmbeddingReaderInterface.generate_embeddings(
-                self.model,
-                [str(cohort["cohort_name"]) for cohort in cohorts],
-                role=EmbeddingRole.DOCUMENT,
-            )
+            if "jnj.com" in self.model._api_base:
+                # Workaround to support the JnJ API:
+                payload = json.dumps({
+                    "input": [str(cohort["cohort_name"]) for cohort in cohorts]
+                })
+                headers = {
+                    'api-key': self.model._client.client.api_key,
+                    'Content-Type': 'application/json'
+                }
+                response = requests.request("POST", self.model._api_base, headers=headers, data=payload)
+                if response.status_code != 200:
+                    raise RuntimeError(f"Failed to get embeddings from JnJ API: {response.status_code} {response.text}")
+                embeddings = np.array([np.array(item["embedding"]) for item in json.loads(response.text)["data"]])
+            else:
+                embeddings = EmbeddingReaderInterface.generate_embeddings(
+                    self.model,
+                    [str(cohort["cohort_name"]) for cohort in cohorts],
+                    role=EmbeddingRole.DOCUMENT,
+                )
             embedding_dim = int(embeddings.shape[1])
             halfvec_type = HALFVEC(embedding_dim)
             halfvec_spec = halfvec_type.compile(dialect=connection.dialect)
